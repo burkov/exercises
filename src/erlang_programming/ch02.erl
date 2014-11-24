@@ -1,4 +1,4 @@
--module(bool).
+-module(ch02).
 -compile(export_all).
 
 -include_lib("eqc/include/eqc.hrl").
