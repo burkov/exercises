@@ -29,7 +29,7 @@ delete(Db, Key) ->
 -spec read(db(), key()) -> value() | {error, not_found}.
 read(Db, Key) ->
   (fun
-    Recur(_, []) -> [];
+    Recur(_, []) -> {error, not_found};
     Recur(K, [{K, V} | _]) -> V;
     Recur(K, [_ | T]) -> Recur(K, T)
   end)(Key, Db).
@@ -57,44 +57,78 @@ filtermap(F, Db) ->
 %%%%
 
 -record(state, {
-  db :: db()
+  db :: db(),
+  model :: [{key(), value()}]
 }).
 
 test() ->
   proper:module(?MODULE).
 
-initial_state() ->
-  #state{}.
+gen_existing_key(List) -> proper_types:elements(proplists:get_keys(List)).
+gen_nonexisting_key(List) ->
+  ?LET(X, proper_types:elements(lists:seq($a, $z) -- proplists:get_keys(List)), list_to_atom([X])).
+gen_existing_value(List) -> proper_types:elements([X || {_, X} <- List]).
+gen_nonexisting_value(List) -> proper_types:elements(lists:seq(1, 12) -- [X || {_, X} <- List]).
 
-gen_key() -> ?LET(X, proper_types:integer($a, $z), list_to_atom([X])).
-gen_value() -> proper_types:list(proper_types:nat()).
+gen_key([]) -> gen_nonexisting_key([]);
+gen_key(List) ->
+  proper_types:frequency([
+    {3, gen_existing_key(List)},
+    {1, gen_nonexisting_key(List)}
+  ]).
 
-command(#state{db = Db}) ->
+gen_value([]) -> gen_nonexisting_value([]);
+gen_value(List) ->
+  proper_types:frequency([
+    {3, gen_existing_value(List)},
+    {1, gen_nonexisting_value(List)}
+  ]).
+
+command(#state{db = Db, model = M}) ->
   proper_types:oneof([
-    {call, ?MODULE, write, [Db, gen_key(), gen_value()]},
-    {call, ?MODULE, delete, [Db, gen_key()]},
-    {call, ?MODULE, read, [Db, gen_key()]},
-    {call, ?MODULE, match, [Db, gen_value()]}
+    {call, ?MODULE, write, [Db, gen_key(M), gen_value(M)]},
+    {call, ?MODULE, delete, [Db, gen_key(M)]},
+    {call, ?MODULE, read, [Db, gen_key(M)]},
+    {call, ?MODULE, match, [Db, gen_value(M)]}
   ]).
 
 precondition(_State, _Call) -> true.
+
+postcondition(#state{model = M}, {call, ?MODULE, match, [_Db, V]}, Res) ->
+  Res =:= [X || {_, X} <- M, X =:= V];
+
+postcondition(_State, {call, ?MODULE, write, [_Db, K, V]}, Res) ->
+  ch03_db:read(Res, K) =:= V;
+
+postcondition(_State, {call, ?MODULE, delete, [_Db, K]}, Res) ->
+  ch03_db:read(Res, K) =:= {error, not_found};
+
+postcondition(#state{model = M}, {call, ?MODULE, read, [_Db, K]}, Res) ->
+  case lists:keymember(K, 1, M) of
+    true ->
+      {K, V} = lists:keyfind(K, 1, M),
+      Res =:= V;
+    false ->
+      Res =:= {error, not_found}
+  end;
 postcondition(_State, _Call, _Res) -> true.
+
 next_state(State, _Res, {call, ?MODULE, match, _}) -> State;
 next_state(State, _Res, {call, ?MODULE, read, _}) -> State;
-next_state(State, Res, _Call) -> State#state{db = Res}.
+next_state(S, Res, {call, ?MODULE, write, [_Db, K, V]}) ->
+  S#state{db = Res, model = lists:keystore(K, 1, S#state.model, {K, V})};
+next_state(S, Res, {call, ?MODULE, delete, [_Db, K]}) ->
+  S#state{db = Res, model = lists:keydelete(K, 1, S#state.model)}.
 
-prop_db() ->
+prop_db_all_operations() ->
   ?FORALL(Commands,
-    proper_statem:commands(?MODULE, #state{db = {var, empty_db}}),
+    proper_statem:commands(?MODULE, #state{db = {var, empty_db}, model = []}),
     begin
       {_History, _State, Result} = proper_statem:run_commands(?MODULE, Commands, [{empty_db, ch03_db:new()}]),
       proper:aggregate(
         proper_statem:command_names(Commands),
+%%         Commands,
         Result =:= ok
       )
     end
   ).
-
-
-
-

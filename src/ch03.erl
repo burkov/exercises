@@ -37,6 +37,12 @@ print_evens(X) when X >= 1 ->
     Recur(M, N) -> Recur(M+1, N)
   end)(1, X).
 
+filter([], _) -> [];
+filter([H|T], N) when H =< N -> [H | filter(T, N)];
+filter([_|T], N) -> filter(T, N).
+
+
+
 %%% Proper tests
 
 test() ->
@@ -58,3 +64,9 @@ prop_create() ->
 prop_reverse_create() ->
   ?FORALL(N, proper_types:pos_integer(), lists:reverse(lists:seq(1, N)) =:= reverse_create(N)).
 
+prop_filter() ->
+  ?FORALL(
+    {List, N},
+    ?LET(L, proper_types:non_empty(proper_types:list(proper_types:pos_integer())), {L, proper_types:elements(L)}),
+    [X || X <- List, X =< N] =:= filter(List, N)
+  ).
