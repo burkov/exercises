@@ -42,6 +42,28 @@ filter([H|T], N) when H =< N -> [H | filter(T, N)];
 filter([_|T], N) -> filter(T, N).
 
 
+reverse(List) ->
+  (fun
+    Recur([], Acc) -> Acc;
+    Recur([H|T], Acc) -> Recur(T, [H|Acc])
+  end)(List, []).
+
+concatenate(List) ->
+  Join = fun
+    Recur([], Acc) -> Acc;
+    Recur([H|T], Acc) -> Recur(T, [H|Acc])
+  end,
+  reverse((fun
+    Recur([], Acc) -> Acc;
+    Recur([H|T], Acc) -> Recur(T, Join(H, Acc))
+  end)(List, [])).
+
+flatten(ListOfLists) ->
+  reverse((fun
+    Recur([], Acc) -> Acc;
+    Recur([H|T], Acc) when is_list(H) -> Recur(T, concatenate([Recur(H, []), Acc]));
+    Recur([H|T], Acc) -> Recur(T, [H|Acc])
+  end)(ListOfLists, [])).
 
 %%% Proper tests
 
@@ -70,3 +92,15 @@ prop_filter() ->
     ?LET(L, proper_types:non_empty(proper_types:list(proper_types:pos_integer())), {L, proper_types:elements(L)}),
     [X || X <- List, X =< N] =:= filter(List, N)
   ).
+
+prop_reverse() ->
+  ?FORALL(List, proper_types:non_empty(proper_types:list()), lists:reverse(List) =:= reverse(List)).
+
+prop_concatenate() ->
+  ?FORALL(ListOfLists, proper_types:non_empty(proper_types:list(proper_types:list())),
+    proper:collect(
+%%       ListOfLists,
+      length(ListOfLists),
+      lists:append(ListOfLists) =:= concatenate(ListOfLists))
+)
+.
