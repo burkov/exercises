@@ -34,36 +34,54 @@ print_evens(X) when X >= 1 ->
   (fun
     Recur(N, N) -> io:format("~p~n", [N]);
     Recur(M, N) when M rem 2 =:= 0 -> io:format("~p~n", [M]), Recur(M + 1, N);
-    Recur(M, N) -> Recur(M+1, N)
+    Recur(M, N) -> Recur(M + 1, N)
   end)(1, X).
 
 filter([], _) -> [];
-filter([H|T], N) when H =< N -> [H | filter(T, N)];
-filter([_|T], N) -> filter(T, N).
+filter([H | T], N) when H =< N -> [H | filter(T, N)];
+filter([_ | T], N) -> filter(T, N).
 
 
 reverse(List) ->
   (fun
     Recur([], Acc) -> Acc;
-    Recur([H|T], Acc) -> Recur(T, [H|Acc])
+    Recur([H | T], Acc) -> Recur(T, [H | Acc])
   end)(List, []).
 
 concatenate(List) ->
   Join = fun
     Recur([], Acc) -> Acc;
-    Recur([H|T], Acc) -> Recur(T, [H|Acc])
+    Recur([H | T], Acc) -> Recur(T, [H | Acc])
   end,
   reverse((fun
     Recur([], Acc) -> Acc;
-    Recur([H|T], Acc) -> Recur(T, Join(H, Acc))
+    Recur([H | T], Acc) -> Recur(T, Join(H, Acc))
   end)(List, [])).
 
 flatten(ListOfLists) ->
   reverse((fun
     Recur([], Acc) -> Acc;
-    Recur([H|T], Acc) when is_list(H) -> Recur(T, concatenate([Recur(H, []), Acc]));
-    Recur([H|T], Acc) -> Recur(T, [H|Acc])
+    Recur([H | T], Acc) when is_list(H) -> Recur(T, concatenate([Recur(H, []), Acc]));
+    Recur([H | T], Acc) -> Recur(T, [H | Acc])
   end)(ListOfLists, [])).
+
+
+qqsort([]) -> [];
+qqsort([H|T]) ->
+  qqsort([X || X <- T, X < H]) ++ [H] ++ qqsort([X || X <- T, X >= H]).
+
+qsort([]) -> [];
+qsort([H|T]) ->
+  qsort(smaller(H, T)) ++ [H] ++ qsort(bigger(H, T)).
+
+smaller(_, []) -> [];
+smaller(X, [H|T]) when X > H -> [H | smaller(X, T)];
+smaller(X, [_|T]) -> smaller(X, T).
+
+bigger(_, []) -> [];
+bigger(X, [H|T]) when X =< H -> [H | bigger(X, T)];
+bigger(X, [_|T]) -> bigger(X, T).
+
 
 %%% Proper tests
 
@@ -99,8 +117,27 @@ prop_reverse() ->
 prop_concatenate() ->
   ?FORALL(ListOfLists, proper_types:non_empty(proper_types:list(proper_types:list())),
     proper:collect(
-%%       ListOfLists,
       length(ListOfLists),
       lists:append(ListOfLists) =:= concatenate(ListOfLists))
-)
-.
+  ).
+
+gen_nonempty_list() ->
+  proper_types:non_empty(proper_types:list(proper_types:pos_integer())).
+
+recur(0) -> [];
+recur(Size) ->
+  ?LAZY(
+    proper_types:frequency([
+      {1, []},
+      {5, ?LET(List, gen_nonempty_list(), [List, recur(Size - 1)])}
+    ])).
+
+gen_lol() ->
+  ?SIZED(Size, recur(Size)).
+
+prop_flatten() ->
+  ?FORALL(ListOfLists, gen_lol(),
+    proper:collect(
+      length(ListOfLists),
+      lists:flatten(ListOfLists) =:= flatten(ListOfLists))
+  ).
